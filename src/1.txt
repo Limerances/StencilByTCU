@@ -1,0 +1,10 @@
+
+分块形状：
+Block_N:20 Block_M:20
+Core_N:16 Core_M:16
+offset_n:2 offset_m:2
+grid_shape: 20 20
+
+[Time] Time used: 0.039968 ms
+[Time] CPU Time: 4.277945 ms
+Check result success!
