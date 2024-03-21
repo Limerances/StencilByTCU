@@ -12,7 +12,10 @@ using namespace std;
 __global__ void mma_run(\
     half * A_Padding, float *S, float *C,\
     int offset_n, int offset_m, \
-    int S_addr, \
+    half *matrix_col,\
+    int col_addr, \
+    int col_pos_min, int col_pos_max,\
+    int stencil_part_size, int *stencil_part_type,int *stencil_part_pos, int *stencil_part_order,\
     int N, int padding);//块边长大于16是必然的
 
 void stencil_on_cpu(float *A, float *S, float *C)
@@ -164,82 +167,63 @@ void stencil_on_gpu(float *A_h, float *S_h, float *C)
     CHECK(cudaMemcpy(S_d, S_h, stencil_shape_M*stencil_shape_N*sizeof(float), cudaMemcpyHostToDevice));
 
     //重组Stencil计算矩阵 根据ipad推导过程 利用多种算法计算最小复杂度，这样就不用增大搜索空间了
-    // StencilPart stencil_part = find_best_stencil_part(S_h,Block_M,Block_N);//拿到拆分结果
+    StencilPart stencil_part = find_best_stencil_part(S_h,Block_M,Block_N,2);//拿到拆分结果//列拆分
 
-    //分开行列
-    // StencilPart stencil_part_row;
-    // StencilPart stencil_part_col;
-    // int row_pos_min = 0, row_pos_max = 0;
-    // int col_pos_min = 0, col_pos_max = 0;
-    // for(int i = 0; i < stencil_part.type.size(); ++i)
-    // {
-    //     if(stencil_part.type[i] == 0)
-    //     {
-    //         stencil_part_row.type.push_back(0);
-    //         stencil_part_row.pos.push_back(stencil_part.pos[i]);
-    //         row_pos_min = Min(row_pos_min, stencil_part.pos[i]);
-    //         row_pos_max = Max(row_pos_max, stencil_part.pos[i]);
-    //     }
-    //     else
-    //     {
-    //         stencil_part_col.type.push_back(1);
-    //         stencil_part_col.pos.push_back(stencil_part.pos[i]);
-    //         col_pos_min = Min(col_pos_min, stencil_part.pos[i]);
-    //         col_pos_max = Max(col_pos_max, stencil_part.pos[i]);
-    //     }
-    // }
-    // //混合起来(放在一起，准备传参)，添加order，我怎么把这么简单的东西写一大堆代码呢 :(
-    // int stencil_part_size = stencil_part.type.size();
-    // int *stencil_part_type = (int*)malloc(stencil_part_size*sizeof(int));
-    // int *stencil_part_pos = (int*)malloc(stencil_part_size*sizeof(int));
-    // int *stencil_part_order = (int*)malloc(stencil_part_size*sizeof(int));
-    // for(int i = 0; i < stencil_part_row.type.size(); ++i)
-    // {
-    //     stencil_part_type[i] = stencil_part_row.type[i];
-    //     stencil_part_pos[i] = stencil_part_row.pos[i];
-    //     stencil_part_order[i] = i;
-    // }
-    // for(int i = 0; i < stencil_part_col.type.size(); ++i)
-    // {
-    //     stencil_part_type[i + stencil_part_row.type.size()] = stencil_part_col.type[i];
-    //     stencil_part_pos[i + stencil_part_row.type.size()] = stencil_part_col.pos[i];
-    //     stencil_part_order[i + stencil_part_row.type.size()] = i;
-    // }
-    // int *stencil_part_type_d, *stencil_part_pos_d, *stencil_part_order_d;
-    // CHECK(cudaMalloc((int**)&stencil_part_type_d, stencil_part_size*sizeof(int)));
-    // CHECK(cudaMalloc((int**)&stencil_part_pos_d, stencil_part_size*sizeof(int)));
-    // CHECK(cudaMalloc((int**)&stencil_part_order_d, stencil_part_size*sizeof(int)));
-    // CHECK(cudaMemcpy(stencil_part_type_d, stencil_part_type, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
-    // CHECK(cudaMemcpy(stencil_part_pos_d, stencil_part_pos, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
-    // CHECK(cudaMemcpy(stencil_part_order_d, stencil_part_order, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
+    //混合起来(放在一起，准备传参)，添加order，我怎么把这么简单的东西写一大堆代码呢 :(
+    int col_pos_min = 0, col_pos_max = 0;
+    int stencil_part_size = stencil_part.type.size();
+    int *stencil_part_type = (int*)malloc(stencil_part_size*sizeof(int));
+    int *stencil_part_pos = (int*)malloc(stencil_part_size*sizeof(int));
+    int *stencil_part_order = (int*)malloc(stencil_part_size*sizeof(int));
+    for(int i = 0; i < stencil_part.type.size(); ++i)
+    {
+        stencil_part_type[i] = stencil_part.type[i];
+        stencil_part_pos[i] = stencil_part.pos[i];
+        stencil_part_order[i] = i;
+        col_pos_min = Min(col_pos_min, stencil_part.pos[i]);
+        col_pos_max = Max(col_pos_max, stencil_part.pos[i]);
+    }
+
+    int *stencil_part_type_d, *stencil_part_pos_d, *stencil_part_order_d;
+    CHECK(cudaMalloc((int**)&stencil_part_type_d, stencil_part_size*sizeof(int)));
+    CHECK(cudaMalloc((int**)&stencil_part_pos_d, stencil_part_size*sizeof(int)));
+    CHECK(cudaMalloc((int**)&stencil_part_order_d, stencil_part_size*sizeof(int)));
+    CHECK(cudaMemcpy(stencil_part_type_d, stencil_part_type, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(stencil_part_pos_d, stencil_part_pos, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(stencil_part_order_d, stencil_part_order, stencil_part_size*sizeof(int), cudaMemcpyHostToDevice));
 
 
     //初始化stencil计算矩阵，行列分别放在一起，之后就可以通过offset来访问了
-    // int stencil_row_size = Block_N;
-    // int stencil_col_size = Block_M;
+    int stencil_col_size = Block_M;
 
-    // half *stencil_matrix_row = (half*)malloc((int)stencil_part_row.type.size()*stencil_row_size*stencil_row_size*sizeof(half));
-    // half *stencil_matrix_col = (half*)malloc((int)stencil_part_col.type.size()*stencil_col_size*stencil_col_size*sizeof(half));
-    // half *stencil_matrix_row_d, *stencil_matrix_col_d;
-    // CHECK(cudaMalloc((half**)&stencil_matrix_row_d, (int)stencil_part_row.type.size()*stencil_row_size*stencil_row_size*sizeof(half)));
-    // CHECK(cudaMalloc((half**)&stencil_matrix_col_d, (int)stencil_part_col.type.size()*stencil_col_size*stencil_col_size*sizeof(half)));
+    half *stencil_matrix_col = (half*)malloc((int)stencil_part.type.size()*stencil_col_size*stencil_col_size*sizeof(half));
+    half  *stencil_matrix_col_d;
+    CHECK(cudaMalloc((half**)&stencil_matrix_col_d, (int)stencil_part.type.size()*stencil_col_size*stencil_col_size*sizeof(half)));
     
-    // float *S_h_copy = (float*)malloc(stencil_shape_M*stencil_shape_N*sizeof(float));//建立一个S_h的副本，因为在第一次提取后会被修改（置0）
-    // memcpy(S_h_copy, S_h, stencil_shape_M*stencil_shape_N*sizeof(float));//因为非0值总不能同时被行列取吧，这样就多算了
-    // stencil2matrix_row(S_h_copy, stencil_part_row, stencil_matrix_row, stencil_row_size);
-    // stencil2matrix_col(S_h_copy, stencil_part_col, stencil_matrix_col, stencil_col_size);
-    // CHECK(cudaMemcpy(stencil_matrix_row_d, stencil_matrix_row, (int)stencil_part_row.type.size()*stencil_row_size*stencil_row_size*sizeof(half), cudaMemcpyHostToDevice));
-    // CHECK(cudaMemcpy(stencil_matrix_col_d, stencil_matrix_col, (int)stencil_part_col.type.size()*stencil_col_size*stencil_col_size*sizeof(half), cudaMemcpyHostToDevice));
+    float *S_h_copy = (float*)malloc(stencil_shape_M*stencil_shape_N*sizeof(float));//建立一个S_h的副本，因为在第一次提取后会被修改（置0）
+    memcpy(S_h_copy, S_h, stencil_shape_M*stencil_shape_N*sizeof(float));//因为非0值总不能同时被行列取吧，这样就多算了
+    stencil2matrix_col(S_h_copy, stencil_part, stencil_matrix_col, stencil_col_size);
+    CHECK(cudaMemcpy(stencil_matrix_col_d, stencil_matrix_col, (int)stencil_part.type.size()*stencil_col_size*stencil_col_size*sizeof(half), cudaMemcpyHostToDevice));
     
-    // //展示重组后的stencil参数矩阵
-    // printf("\nstencil按行拆分矩阵：数据块大小为:%d %d\n", Block_M, Block_N);
-    // show_stencil_matrix(stencil_matrix_row, (int)stencil_part_row.type.size(), stencil_row_size);
-    // printf("\nstencil按列拆分矩阵：数据块大小为:%d %d\n", Block_M, Block_N);
-    // show_stencil_matrix(stencil_matrix_col, (int)stencil_part_col.type.size(), stencil_col_size);
+    // 展示重组后的stencil参数矩阵
+    printf("\nstencil按列拆分矩阵：数据块大小为:%d %d\n", Block_M, Block_N);
+    show_stencil_matrix(stencil_matrix_col, (int)stencil_part.type.size(), stencil_col_size);
     
     //切分数据矩阵，采取overlaylout的方法
-    int offset_n = stencil_core_N;
+    // int Core_N = Block_N - (stencil_shape_N - 1);
+    // int Core_M = Block_M - (stencil_shape_M - 1);
+    int offset_n = 0;
     int offset_m = stencil_core_M;
+    // if(stencil_part_col.type.size() == 0)
+    // {
+    //     Core_M = Block_M;
+    //     offset_m = 0;
+    // }
+    // if(stencil_part_row.type.size() == 0)
+    // {
+    //     Core_N = Block_N;
+    //     offset_n = 0;
+    // }
 
     dim3 block(Warp_Size);
     dim3 grid((MESH_SIZE - 1)/(Core_N) + 1, (MESH_SIZE - 1)/(Core_M) + 1);//over
@@ -248,15 +232,16 @@ void stencil_on_gpu(float *A_h, float *S_h, float *C)
     printf("Block_N:%d Block_M:%d\n", Block_N, Block_M);
     printf("Core_N:%d Core_M:%d\n", Core_N, Core_M);
     printf("offset_n:%d offset_m:%d\n", offset_n, offset_m);
+    printf("col_pos_min:%d col_pos_max:%d\n", col_pos_min, col_pos_max);
     //grid形状
     printf("grid_shape: %d %d\n\n", grid.x, grid.y);
 
     //设置共享内存的大小
-    int shared_mem_data = sizeof(half)*(Block_M*Block_N);//网格
-    int shared_mem_S = sizeof(float)*(stencil_shape_M*stencil_shape_N);//stencil区域
-    int shared_mem_size = shared_mem_data + shared_mem_S;
-    int shared_mem_S_addr = Block_M*Block_N;
+    int shared_mem_col_size = sizeof(half)*(Block_M*Block_N + Block_M*(col_pos_max - col_pos_min));//列拆分的stencil所计算的网格
 
+    int shared_mem_size = shared_mem_col_size;
+    int shared_mem_col_addr = (Block_M*abs(col_pos_min));//col指针位置  load数据位置
+ 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
@@ -272,7 +257,10 @@ void stencil_on_gpu(float *A_h, float *S_h, float *C)
         mma_run<<<grid, block, shared_mem_size>>>(\
             A_d_padding, S_d, C_d ,\
             offset_n, offset_m, \
-            shared_mem_S_addr,\
+            stencil_matrix_col_d, \
+            shared_mem_col_addr, \
+            col_pos_min, col_pos_max, \
+            stencil_part_size, stencil_part_type_d, stencil_part_pos_d, stencil_part_order_d, \
             MESH_SIZE, Padding);
 
         cudaDeviceSynchronize();
@@ -290,21 +278,18 @@ void stencil_on_gpu(float *A_h, float *S_h, float *C)
     
     //free
     free(A_h_padding);
-    // free(S_h_half);
+    free(stencil_part_type);
+    free(stencil_part_pos);
+    free(stencil_part_order);
+    free(stencil_matrix_col);
+    free(S_h_copy);
     CHECK(cudaFree(A_d_padding));
     CHECK(cudaFree(S_d));
     CHECK(cudaFree(C_d));
-    // free(stencil_matrix_row);
-    // free(stencil_matrix_col);
-    // CHECK(cudaFree(stencil_matrix_row_d));
-    // CHECK(cudaFree(stencil_matrix_col_d));
-    // free(stencil_part_type);
-    // free(stencil_part_pos);
-    // free(stencil_part_order);
-    // CHECK(cudaFree(stencil_part_type_d));
-    // CHECK(cudaFree(stencil_part_pos_d));
-    // CHECK(cudaFree(stencil_part_order_d));
-    // free(S_h_copy);
+    CHECK(cudaFree(stencil_part_type_d));
+    CHECK(cudaFree(stencil_part_pos_d));
+    CHECK(cudaFree(stencil_part_order_d));
+    CHECK(cudaFree(stencil_matrix_col_d));
 
     return;
 }

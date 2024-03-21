@@ -1,5 +1,13 @@
 # StencilByTCU
 
+2024/3/21更新：
+
+添加了over_layout_Block16_row方法，比baseline快20%以上
+
+
+
+2024/3/20：
+
 利用src里的compile.py文件来编译运行，目的是针对性的添加宏定义参数，修改compile.py文件里的src参数可以切换不同实现方式。
 
 ```

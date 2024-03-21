@@ -337,6 +337,7 @@ void stencil_on_gpu(float *A_h, float *S_h, float *C)
 
 int main(int argc,char** argv)
 {
+    cudaSetDevice(1);
     float *A_h, *S_h, *C_h, *C_from_gpu;
     A_h = (float*)malloc(MESH_SIZE*MESH_SIZE*sizeof(float));
     S_h = (float*)malloc(stencil_shape_M*stencil_shape_N*sizeof(float));

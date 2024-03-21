@@ -59,7 +59,7 @@ def run_file_serial(file_name):
 
 
 if __name__ == '__main__':
-    
+
     MESH_SIZE = 3200
     Padding = 16
     stencil_shape_M = 5
@@ -101,6 +101,33 @@ if __name__ == '__main__':
         Block_N = 16#
         Core_N = (Block_N - (stencil_shape_N - 1))#
         Core_M = (Block_M - (stencil_shape_M - 1))#
+    elif(type == "over_layout_Block16_row"):
+        srcdir = r"over_layout_Block16_row"#
+        WMMA_M = 16#
+        WMMA_N = 16#
+        WMMA_K = 16#
+        Block_M = 16#
+        Block_N = 16#
+        Core_N = (Block_N - (stencil_shape_N - 1))#
+        Core_M = Block_M
+    elif(type == "over_layout_Block16_row_brick"):
+        srcdir = r"over_layout_Block16_row_brick"#
+        WMMA_M = 16#
+        WMMA_N = 16#
+        WMMA_K = 16#
+        Block_M = 16#
+        Block_N = 16#
+        Core_N = (Block_N - (stencil_shape_N - 1))#
+        Core_M = Block_M
+    elif(type == "over_layout_Block16_col"):
+        srcdir = r"over_layout_Block16_col"#
+        WMMA_M = 16#
+        WMMA_N = 16#
+        WMMA_K = 16#
+        Block_M = 16#
+        Block_N = 16#
+        Core_N = Block_N#
+        Core_M = (Block_M - (stencil_shape_M - 1))#
     elif(type == "fma"):
         srcdir = r"fma"#
     elif(type == "fma_Block16"):
@@ -131,6 +158,13 @@ if __name__ == '__main__':
         WMMA_K = 16
         Block_M = 16
         Block_N = 16
+    elif(type == "fma_Block16_col_test"):
+        srcdir = r"fma_Block16_col_test"#
+        WMMA_M = 16#
+        WMMA_N = 16#
+        WMMA_K = 16#
+        Block_M = 16#
+        Block_N = 16#
         
 
     
